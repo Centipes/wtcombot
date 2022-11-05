@@ -8,10 +8,6 @@ from wterror import Error
 from tgbot import TelegramBot
 from wabot import WhatsAppBot
 
-# -- сообщения о ошибках, которые телеграм-бот будет отправлять в чат --
-tg_error_notifications = {"uploading": "Error uploading media", "sending":"Error sending message", "content": "Content error"}
-# -- сообщения о ошибках, которые ватсап-бот будет отправлять в чат --
-wa_error_notifications = {"content": "This type of content cannot be forwarded to our operators", "sending": "I can't send a message, please contact our operators in another way"}
 
 # -- декоратор-обработчик исключений для телеграма --
 def tg_check_errors(tg_sender):
@@ -21,7 +17,7 @@ def tg_check_errors(tg_sender):
         except Exception as err:
             logging.error(f"method: tg_check_errors :{err}")
             logging.exception("message")
-            return Error(tg_error_notifications["sending"])
+            return Error(self.whatsapp_bot.error_notifications["sending"])
     return wrapper
 
 # -- декоратор-обработчик исключений для ватсапа --
@@ -32,7 +28,7 @@ def wa_check_errors(wa_sender):
         except Exception as err:
             logging.error(f"method: wa_check_errors : {err}")
             logging.exception("message")
-            return Error(tg_error_notifications["sending"])
+            return Error(self.telegram_bot.error_notifications["sending"])
     return wrapper
 
 
@@ -125,7 +121,7 @@ class TGWACOM():
             # -- бот отправляет сообщение из чата группы пользователю --
 
             if(not reply_message is None and reply_message['from']['id'] == self.__TG_BOT_ID and message['chat']['id'] == self.__TG_CHAT_ID):
-                if(reply_message.get('text') and not (reply_message['text'] in tg_error_notifications.values())):
+                if(reply_message.get('text') and not (reply_message['text'] in self.whatsapp_bot.error_notifications.values())):
 
                     logging.info(f"Message from telegram: {message}", )
 
@@ -188,7 +184,7 @@ class TGWACOM():
             if(contact and 'phones' in contact):
                 return self.telegram_bot.send_message(self.__TG_CHAT_ID, "Contact: " + contact['name']['first_name'] + " +" + contact['phones'][0]['wa_id'], postscipt, reply_id=message_id)
 
-        return Error(wa_error_notifications['content'])
+        return Error(self.telegram_bot.error_notifications['content'])
 
     @tg_check_errors
     def __telegram_to_whatsapp_sender__(self, message, number, content_type):
@@ -240,7 +236,7 @@ class TGWACOM():
                 address = location_info['address']
             return self.whatsapp_bot.send_location(location_latitude, location_longitude, title, address, number)
 
-        return Error(tg_error_notifications['content'])
+        return Error(self.whatsapp_bot.error_notifications['content'])
 
     def __wa_upload_media__(self, file_id, content_type=None):
 

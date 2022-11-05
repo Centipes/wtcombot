@@ -7,14 +7,15 @@ from heyoo import WhatsApp
 
 from wterror import Error
 
-# -- сообщения о ошибках, которые телеграм-бот будет отправлять в чат --
-tg_error_notifications = {"uploading": "Error uploading media", "sending":"Error sending message", "content": "Content error"}
 
 class WhatsAppBot(WhatsApp):
 
     def __init__(self, WA_ACCESS_TOKEN, WA_NUMBER_ID):
         super().__init__(WA_ACCESS_TOKEN,  phone_number_id = WA_NUMBER_ID)
         self.base_url = "https://graph.facebook.com/v15.0"
+        # -- сообщения о ошибках, которые телеграм-бот будет отправлять в чат --
+        self.error_notifications = {"uploading": "Error uploading media", "sending":"Error sending message", "content": "Content error"}
+
 
     def get_content(self, media_url, mime_type):
         r = requests.get(media_url, headers=self.headers)
@@ -41,8 +42,8 @@ class WhatsAppBot(WhatsApp):
         if(response.get("error")):
             logging.error(response)
             if(second_message):
-                return Error(tg_error_notifications["uploading"])
-            return Error(tg_error_notifications["sending"])
+                return Error(self.error_notifications["uploading"])
+            return Error(self.error_notifications["sending"])
 
         logging.info(f"WhatsApp messenge from telegram: {response}")
 

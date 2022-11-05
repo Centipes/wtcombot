@@ -3,13 +3,14 @@ import logging
 from wterror import Error
 from telebot import TeleBot
 
-# -- сообщения о ошибках, которые ватсап-бот будет отправлять в чат --
-wa_error_notifications = {"content": "This type of content cannot be forwarded to our operators", "sending": "I can't send a message, please contact our operators in another way"}
 
 class TelegramBot(TeleBot):
     def __init__(self, TG_API_TOKEN):
         super().__init__(TG_API_TOKEN)
         self.telegram_content_types = ['text', 'document', 'audio', 'photo','video', 'video_note','voice', 'location']
+        # -- сообщения о ошибках, которые ватсап-бот будет отправлять в чат --
+        self.error_notifications = {"content": "This type of content cannot be forwarded to our operators", "sending": "I can't send a message, please contact our operators in another way"}
+
 
     def get_content_type(self, message):
         for type in self.telegram_content_types:
@@ -39,4 +40,4 @@ class TelegramBot(TeleBot):
             return location_message
         if(location_message):
             return super().send_message(chat_id, text=postscipt, parse_mode=mode,  disable_web_page_preview=True, reply_to_message_id=location_message.message_id)
-        return Error(wa_error_notifications['content'])
+        return Error(self.error_notifications['content'])

@@ -1,0 +1,17 @@
+---
+services:
+  bot:
+    hostname: bot
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 5000:5000/tcp
+    environment:
+      - WT_COMBOT_WA_NUMBER_ID=${WT_COMBOT_WA_NUMBER_ID}
+      - WT_COMBOT_WA_ACCESS_TOKEN=${WT_COMBOT_WA_ACCESS_TOKEN}
+      - WT_COMBOT_WA_VERIFY_TOKEN=${WT_COMBOT_WA_VERIFY_TOKEN}
+      - WT_COMBOT_TG_BOT_ID=${WT_COMBOT_TG_BOT_ID}
+      - WT_COMBOT_TG_CHAT_ID=${WT_COMBOT_TG_CHAT_ID}
+      - WT_COMBOT_TG_API_TOKEN=${WT_COMBOT_TG_API_TOKEN}
+      - FLASK_DEBUG=${FLASK_DEBUG-0}

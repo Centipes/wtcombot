@@ -11,6 +11,7 @@ from wtcombot.wabot import WhatsAppBot
 # -- декоратор-обработчик исключений для телеграма --
 def tg_check_errors(tg_sender):
     def wrapper(self, message, number, content_type):
+        logging.info(f'telegram -> whatsapp: {{ "message": {message}, "number": {number}, "content_type": {content_type} }}')
         try:
             return tg_sender(self, message, number, content_type)
         except Exception as err:
@@ -22,6 +23,7 @@ def tg_check_errors(tg_sender):
 # -- декоратор-обработчик исключений для ватсапа --
 def wa_check_errors(wa_sender):
     def wrapper(self, content_type, data, postscipt, message_id):
+        logging.info(f'whatsapp -> telegram: {{ "content_type": {content_type}, "data": {data}, "postscipt": {postscipt}, "message_id": {message_id} }}')
         try:
             return wa_sender(self, content_type, data, postscipt, message_id)
         except Exception as err:
@@ -121,11 +123,15 @@ class TGWACOM():
             # -- бот отправляет сообщение из чата группы пользователю --
 
             if(not reply_message is None and reply_message['from']['id'] == self.__TG_BOT_ID and message['chat']['id'] == self.__TG_CHAT_ID):
-                if(reply_message.get('text') and not (reply_message['text'] in self.whatsapp_bot.error_notifications.values())):
+                if((reply_message.get('text') and not (reply_message['text'] in self.whatsapp_bot.error_notifications.values()))) or reply_message.get('caption'):
 
                     logging.info(f"Message from telegram: {message}", )
 
-                    last_line = reply_message['text'].split("\n")[-1]
+                    if reply_message.get('text'):
+                        last_line = reply_message['text'].split("\n")[-1]
+                    elif reply_message.get('caption'):
+                        last_line = reply_message['caption'].split("\n")[-1]
+
                     mobile = last_line.split(" ")[-2]
 
                     content_type = self.telegram_bot.get_content_type(message)
@@ -139,7 +145,7 @@ class TGWACOM():
                     # else:
                     #     save_tg_status(message_id)
 
-                   
+
     @wa_check_errors
     def __whatsapp_to_telegram_sender__(self, content_type, data, postscipt, message_id):
 
@@ -292,7 +298,7 @@ class TGWACOM():
 
         return self.telegram_bot.send_message(chat_id, message=message_text, postscipt="", reply_id = message_id)
 
-    def __wa_send_error__(self, number, message_text):
+    def __wa_send_error__(self, message_text, number):
 
         # __wa_send_error__ ватсап-бот печатает ошибку в чат с пользователем
 

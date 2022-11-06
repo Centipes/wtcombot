@@ -19,6 +19,7 @@ def wa_webhook():
     try:
         # test_wa_init()
         data = request.get_json()
+        logging.info(f'whatsapp data: {data}')
         tgwacombot.wa_point(data)
     except Exception as e:
         logging.error(f'WhatsApp: {e}')
@@ -51,6 +52,7 @@ else:
     logging.error(f"Not all environment variables are declared correctly in the file {filename}")
 
 if __name__ == "__main__":
+    # TODO: Add file existance check
     filename = argv[1] if len(argv) == 2 else '.env'
     load_dotenv(filename)
     app.run(port=5000, debug=True)

@@ -13,9 +13,10 @@ ENV PIP_NO_CACHE_DIR=off \
 
 RUN pip install "poetry==$POETRY_VERSION"
 WORKDIR /bot
-COPY . .
-
+COPY pyproject.toml .
 RUN poetry install --no-interaction --no-ansi
+
+COPY . .
 
 ENV BOT_LISTEN_ADDR=0.0.0.0
 ENV BOT_LISTEN_PORT=5000

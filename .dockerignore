@@ -1,6 +1,7 @@
 Dockerfile
 .dockerignore
 docker-compose.yml
+poetry.lock
 
 # .gitignore
 #### macos ####

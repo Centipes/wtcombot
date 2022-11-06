@@ -5,7 +5,7 @@ from mimetypes import guess_type
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 from heyoo import WhatsApp
 
-from wterror import Error
+from wtcombot.wterror import Error
 
 
 class WhatsAppBot(WhatsApp):

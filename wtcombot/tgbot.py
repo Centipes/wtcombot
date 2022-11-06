@@ -1,6 +1,6 @@
 import logging
 
-from wterror import Error
+from wtcombot.wterror import Error
 from telebot import TeleBot
 
 

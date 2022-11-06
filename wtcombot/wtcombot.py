@@ -2,11 +2,10 @@ import logging
 from re import fullmatch
 from os import getenv, strerror
 from errno import ENOENT
-from dotenv import load_dotenv
 
-from wterror import Error
-from tgbot import TelegramBot
-from wabot import WhatsAppBot
+from wtcombot.wterror import Error
+from wtcombot.tgbot import TelegramBot
+from wtcombot.wabot import WhatsAppBot
 
 
 # -- декоратор-обработчик исключений для телеграма --
@@ -33,11 +32,12 @@ def wa_check_errors(wa_sender):
 
 
 class TGWACOM():
-    def __init__(self, filename):
+    # def __init__(self, filename):
+    def __init__(self):
 
-        self.__ENV_FILE = filename
-        if(not load_dotenv(self.__ENV_FILE)):
-            raise FileNotFoundError(ENOENT, strerror(ENOENT), self.__ENV_FILE)
+        # self.__ENV_FILE = filename
+        # if(not load_dotenv(self.__ENV_FILE)):
+        #     raise FileNotFoundError(ENOENT, strerror(ENOENT), self.__ENV_FILE)
         
         self.__WA_NUMBER_ID = getenv('WT_COMBOT_WA_NUMBER_ID')
         self.__WA_ACCESS_TOKEN = getenv('WT_COMBOT_WA_ACCESS_TOKEN')

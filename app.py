@@ -2,13 +2,11 @@ import logging
 from sys import argv
 from flask import Flask, request, make_response, abort
 
-from wtcombot import TGWACOM
-
-filename = argv[1] if len(argv) == 2 else '../WT_COMBOT_ENVFILE.env'
-logging.info(f"file env: {filename}")
+from wtcombot.wtcombot import TGWACOM
+from dotenv import load_dotenv
 
 app = Flask(__name__)
-tgwacombot = TGWACOM(filename)
+tgwacombot = TGWACOM()
 
 # ВАТСАП
 @app.route("/w", methods=["GET", "POST"])
@@ -47,10 +45,12 @@ def tg_webhook():
         abort(403)
     return ''
 
+if tgwacombot.check_env_variables():
+    tgwacombot.setup()
+else:
+    logging.error(f"Not all environment variables are declared correctly in the file {filename}")
 
 if __name__ == "__main__":
-    if tgwacombot.check_env_variables():
-        tgwacombot.setup()
-        app.run(port=5000, debug=True)
-    else:
-        logging.error(f"Not all environment variables are declared correctly in the file {filename}")
+    filename = argv[1] if len(argv) == 2 else '.env'
+    load_dotenv(filename)
+    app.run(port=5000, debug=True)

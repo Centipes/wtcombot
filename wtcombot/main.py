@@ -19,7 +19,6 @@ def wa_webhook():
             response.mimetype = "text/plain"
             return response
     try:
-        # test_wa_init()
         data = request.get_json()
         tgwacombot.wa_point(data)
     except Exception as e:

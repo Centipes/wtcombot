@@ -15,15 +15,27 @@ class WhatsAppBot(WhatsApp):
         self.base_url = "https://graph.facebook.com/v15.0"
         # -- сообщения о ошибках, которые телеграм-бот будет отправлять в чат --
         self.error_notifications = {"uploading": "Error uploading media", "sending":"Error sending message", "content": "Content error"}
+        self.file = None
+        
+    def generate_user_info(self, number, username) -> str:
 
+        # generate_user_info генерирует информацию о пользователе из ватсапа
 
-    def get_content(self, media_url, mime_type):
-        r = requests.get(media_url, headers=self.headers)
-        content = r.content
-        return content
+        generated_message = "\n\n"
+        generated_message += '<i>~whatsapp</i> '
+        generated_message += f'<a href="https://wa.me/{number}">{username}</a>' + " +" + number + " #ID" + number
+        return f'{generated_message}'
 
-    def get_data(self, data, content_type):
+    def get_binary_file(self, data, content_type):
+        self.file = self.get_data(data, content_type)
+        if(self.file):
+            file_id, mime_type = self.file["id"], self.file["mime_type"]
+            file_url = self.query_media_url(file_id)
+            content = self.get_content(file_url, mime_type)
+            return content
+        return None
 
+    def get_data(self, data, content_type) -> dict:
         try:
             data = self.preprocess(data)
             if "messages" in data:
@@ -32,31 +44,35 @@ class WhatsAppBot(WhatsApp):
         except Exception as e:
             logging.error(f"class: WhatsAppBot, method: get_data : {e}")
             logging.exception("message")
+        return dict()
+
+    def get_content(self, media_url, mime_type):
+        try:
+            r = requests.get(media_url, headers=self.headers)
+            content = r.content
+            return content
+        except Exception as e:
+            logging.error(f"class: WhatsAppBot, method: get_content : {e}")
+            logging.exception("message")
         return None
 
-    def __check_message__(self, response, second_message, number):
+    def get_caption(self) -> str:
+        return self.file.get('caption', '') if self.file else ''
 
-        # __check_message__  возвращает Error, если запрос завершился с ошибкой.
-        # В случае успеха возвращает True
+    def get_filename(self) -> str|None:
+        return self.file["filename"] if self.file else None
 
-        if(response.get("error")):
-            logging.error(response)
-            if(second_message):
-                return Error(self.error_notifications["uploading"])
-            return Error(self.error_notifications["sending"])
+    def get_geodata(self, location) -> tuple:
+        latitude, longitude = location['latitude'], location['longitude']
+        return latitude, longitude
 
-        logging.info(f"WhatsApp messenge from telegram: {response}")
-
-        if(second_message):
-            return self.send_message(second_message, number)
-
-        return True
+    def get_place(self, location) -> tuple:
+        return location.get('name', ''), location.get('address', '')
 
     def send_message(self, message, number):
         response = super().send_message(message, number)
         return self.__check_message__(response, None, number)
        
-
     def send_document(self, media_id, number, filename, second_message):
         response = super().send_document(document=media_id, recipient_id=number, caption=filename, link=False)
         return self.__check_message__(response, second_message, number)
@@ -111,3 +127,21 @@ class WhatsAppBot(WhatsApp):
         logging.info(f"Status code: {r.status_code}")
         logging.info(f"Response: {r.json()}")
         return None
+
+    def __check_message__(self, response, second_message, number) -> dict:
+
+        # __check_message__  генерирует исключение, если запрос завершился с ошибкой.
+        # В случае успеха возвращает response
+
+        if(response.get("error")):
+            logging.error(response)
+            if(second_message):
+                raise Error(self.error_notifications["uploading"])
+            raise Error(self.error_notifications["sending"])
+
+        logging.info(f"WhatsApp messenge from telegram: {response}")
+
+        if(second_message):
+            return self.send_message(second_message, number)
+
+        return response

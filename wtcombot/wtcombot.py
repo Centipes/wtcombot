@@ -1,44 +1,19 @@
-import logging
+from logging import info as log_info, error as log_error, exception as log_exception  
+from psycopg2 import connect as ps_connect
 from re import fullmatch
 from os import getenv, strerror
 from errno import ENOENT
 from dotenv import load_dotenv
+from kafka.structs import OffsetAndMetadata
 
-from wterror import Error
+from wterror import WTCombotError
 from tgbot import TelegramBot
 from wabot import WhatsAppBot
 
 
-# -- декоратор-обработчик исключений для телеграма --
-def tg_check_errors(tg_sender):
-    def wrapper(self, message, number, content_type):
-        try:
-            return tg_sender(self, message, number, content_type)
-        except Error as error_from_telegram:
-            raise error_from_telegram
-        except Exception as err:
-            logging.error(f"method: tg_check_errors :{err}")
-            logging.exception("message")
-            raise Error(self.whatsapp_bot.error_notifications["sending"])
-    return wrapper
-
-# -- декоратор-обработчик исключений для ватсапа --
-def wa_check_errors(wa_sender):
-    def wrapper(self, content_type, data, postscipt, message_id):
-        try:
-            return wa_sender(self, content_type, data, postscipt, message_id)
-        except Error as error_from_whatsapp:
-            raise error_from_whatsapp
-        except Exception as err:
-            logging.error(f"method: wa_check_errors : {err}")
-            logging.exception("message")
-            raise Error(self.telegram_bot.error_notifications["sending"])
-    return wrapper
-
-
 class TGWACOM():
     def __init__(self, filename):
-
+        log_info("Create TGWACOM")
         self.__ENV_FILE = filename
         if(not load_dotenv(self.__ENV_FILE)):
             raise FileNotFoundError(ENOENT, strerror(ENOENT), self.__ENV_FILE)
@@ -51,6 +26,10 @@ class TGWACOM():
         self.__TG_BOT_ID = getenv('WT_COMBOT_TG_BOT_ID')
         self.__TG_API_TOKEN = getenv('WT_COMBOT_TG_API_TOKEN')
 
+        self.__DB_NAME = getenv('WT_COMBOT_DB_NAME')
+        self.__DB_USER = getenv('WT_COMBOT_DB_USER')
+        self.__DB_PASSWORD = getenv('WT_COMBOT_DB_PASSWORD')
+
         print('WA_NUMBER_ID = ', self.__WA_NUMBER_ID)
         print('WA_ACCESS_TOKEN = ', self.__WA_ACCESS_TOKEN)
         print('WA_VERIFY_TOKEN = ', self.__WA_VERIFY_TOKEN)
@@ -58,8 +37,8 @@ class TGWACOM():
         print('TG_BOT_ID = ', self.__TG_BOT_ID)
         print('TG_API_TOKEN = ', self.__TG_API_TOKEN)
 
-    def setup(self):
-        self.whatsapp_bot = WhatsAppBot(self.__WA_ACCESS_TOKEN, self.__WA_NUMBER_ID) # self.__WA_ACCESS_TOKEN, self.__WA_NUMBER_ID
+    def setup(self) -> None:
+        self.whatsapp_bot = WhatsAppBot(self.__WA_ACCESS_TOKEN, self.__WA_NUMBER_ID)
         self.telegram_bot = TelegramBot(self.__TG_API_TOKEN) 
 
     def check_env_variables(self) -> bool:
@@ -79,98 +58,162 @@ class TGWACOM():
 
         return self.__WA_NUMBER_ID and self.__WA_ACCESS_TOKEN and self.__WA_VERIFY_TOKEN and self.__TG_CHAT_ID and self.__TG_BOT_ID and self.__TG_API_TOKEN
 
-    def wa_point(self, data) -> None:
+    def wa_point(self, json_data) -> None:
 
         # wa_point вызывается из app request (wa_webhook)
 
-        logging.info("Received whatsapp webhook data: %s", data)
-        changed_field = self.whatsapp_bot.changed_field(data)
+        log_info("Received whatsapp webhook data: %s", json_data)
+        changed_field = self.whatsapp_bot.changed_field(json_data)
 
         if changed_field == "messages":
-            phone_number = self.whatsapp_bot.get_mobile(data)
+            phone_number = None
+            old_message_id = None
+            new_message_id = None
+            status_connection = self.open_connection()
+            
+            try:
+                prep_data = self.whatsapp_bot.preprocess(json_data)
 
-            if phone_number:
+                phone_number = self.whatsapp_bot.get_mobile(prep_data)
+                if not phone_number:
+                    return
+                
                 modified_phone_number = self.__modify_rus_number__(phone_number)
-                name = self.whatsapp_bot.get_name(data)
-                content_type = self.whatsapp_bot.get_message_type(data)
-                postscipt = self.whatsapp_bot.generate_user_info(phone_number, name)
+                old_message_id = self.get_reply_to_message_id(phone_number) #
+
+                content_type = self.whatsapp_bot.get_message_type(prep_data) #
+
+                name = self.whatsapp_bot.get_name(prep_data)
+                postscipt = self.whatsapp_bot.generate_user_info(phone_number, name) #
 
                 try:
-                    sending_status = self.__whatsapp_to_telegram_sender__(data, postscipt, content_type, None) # get_reply_to_message_id(phone_number)
-                except Error as err:
-                    self.__wa_send_error__(err.get_message(), modified_phone_number)
+                    data = self.whatsapp_bot.get_data(prep_data, content_type)
+                    sent_message = self.__whatsapp_to_telegram_sender__(data, postscipt, content_type, old_message_id)
+                    log_info(f"sending_status from telegram: {sent_message}")
+                    new_message_id = sent_message.message_id
 
-                logging.info(f"sending_status from telegram: {sending_status}")
-
+                except KeyError as ke:
+                    log_error(f"KeyError in whatsapp {ke}")
+                    log_exception("message")
+                    self.__wa_send_error__(self.telegram_bot.error_notifications['content'], modified_phone_number)
+                
+                except WTCombotError as error_from_telegram:
+                    self.__wa_send_error__(error_from_telegram.get_message(), modified_phone_number)
+        
+            finally:            
+                if(status_connection):
+                    if(phone_number and new_message_id):
+                        self.set_reply_to_message_id(phone_number, old_message_id, new_message_id)
+                    self.close_connection()
 
     def tg_point(self, data) -> None:
 
         # tg_point вызывается из app request (tg_webhook)
 
-        logging.info("Received telegram webhook data: %s", data)
+        log_info("Received telegram webhook data: %s", data)
         message = data.get('message')
 
         if message:
-            message_for_bot = self.__tg_check_reply_message_to_bot__(message)
+            try:
+                message_id = self.telegram_bot.get_message_id(message)
+                message_for_bot = self.__tg_check_reply_message_to_bot__(message)
 
             # -- бот отправляет сообщение из чата группы пользователю --
+                log_info(f"Message for bot:{message_for_bot}")
+                if(message_for_bot):
+                    content_type = self.telegram_bot.get_content_type(message)
+                    phone_number = self.telegram_bot.get_phone_number(message_for_bot)
+                    sent_message = self.__telegram_to_whatsapp_sender__(message, self.__modify_rus_number__(phone_number[1:]), content_type)
+                    log_info(f"Sending_status from whatsapp: {sent_message}")
 
-            if(message_for_bot):
-                phone_number = self.telegram_bot.get_phone_number(message_for_bot)
-                content_type = self.telegram_bot.get_content_type(message)
-                message_id = self.telegram_bot.get_message_id(message)
+            except WTCombotError as error_from_whatsapp:
+                self.__tg_send_error__(message_id, error_from_whatsapp.get_message())
 
-                try:
-                    sending_status = self.__telegram_to_whatsapp_sender__(message, self.__modify_rus_number__(phone_number[1:]), content_type)
-                except Error as err:
-                    self.__tg_send_error__(self.__TG_CHAT_ID, message_id = message_id, message_text = err.get_message())
+            except Exception as err:
+                log_error(f"method: tg_check_errors :{err}")
+                log_exception("message")
+                self.__tg_send_error__(message_id, self.whatsapp_bot.error_notifications['sending'])
 
-                logging.info(f"sending_status from whatsapp: {sending_status}")
+    def open_connection(self) -> bool:
+        try:
+            self.conn = ps_connect(dbname=self.__DB_NAME, user=self.__DB_USER, password=self.__DB_PASSWORD, host='localhost')
+            self.cursor = self.conn.cursor()
+            return True
+        except Exception as err:
+            log_error("Exception from open_connection: %s", err)
+            log_exception("message")
+        return False
 
-                   
-    @wa_check_errors
-    def __whatsapp_to_telegram_sender__(self, data, postscipt, content_type, message_id):
+    def close_connection(self) -> None:
+        try:
+            if(hasattr(self, 'conn')):
+                self.conn.close()
+            if(hasattr(self, 'cursor')):
+                self.cursor.close()
+        except Exception as err:
+            log_error("Exception from close_connection: %s", err)
+
+    def get_reply_to_message_id(self, phone_number) -> int|None:
+        try:
+            self.cursor.execute(f'SELECT message_id FROM tg_user_messages WHERE user_number={phone_number};')
+            response = self.cursor.fetchone()
+            return response[0] if response else None
+        except Exception as err:
+            log_error("Exception from get_reply_to_message_id: %s", err)
+        return None
+
+    def set_reply_to_message_id(self, phone_number, old_message_id, new_message_id) -> None:
+        try:
+            if(old_message_id):
+                self.cursor.execute(f'UPDATE tg_user_messages SET message_id={new_message_id} WHERE user_number={phone_number};')
+            else:
+                self.cursor.execute(f'INSERT INTO tg_user_messages VALUES ({phone_number}, {new_message_id});')
+            self.conn.commit()
+        except Exception as err:
+            log_error("Exception from set_reply_to_message_id: %s", err)
+
+
+    def __whatsapp_to_telegram_sender__(self, data, postscipt, content_type, message_id): 
 
         # __whatsapp_to_telegram_sender__ пересылает сообщение из ватсапа в телеграм
-
+        log_info(f'MESSAGE for telegram: {data}')
         if content_type == "text":
             message = self.whatsapp_bot.get_message(data)
             return self.telegram_bot.send_message(self.__TG_CHAT_ID, message, postscipt, reply_id=message_id)
 
-        elif content_type == "document":
-            content = self.whatsapp_bot.get_binary_file(data, content_type)
-            filename = self.whatsapp_bot.get_filename()
+        if content_type == "document":
+            content = self.whatsapp_bot.get_binary_file(data)
+            filename = self.whatsapp_bot.get_filename(data)
             return self.telegram_bot.send_document(self.__TG_CHAT_ID, content, filename, postscipt, reply_id=message_id)
 
-        elif content_type == 'audio':
-            content = self.whatsapp_bot.get_binary_file(data, content_type)
+        if content_type == 'audio':
+            content = self.whatsapp_bot.get_binary_file(data)
             return self.telegram_bot.send_audio(self.__TG_CHAT_ID, content, postscipt, reply_id=message_id)
 
-        elif content_type == 'video':
-            content = self.whatsapp_bot.get_binary_file(data, content_type)
-            caption = self.whatsapp_bot.get_caption()
+        if content_type == 'video':
+            content = self.whatsapp_bot.get_binary_file(data)
+            caption = self.whatsapp_bot.get_caption(data)
             return self.telegram_bot.send_video(self.__TG_CHAT_ID, content, caption, postscipt, reply_id=message_id)
 
-        elif content_type == "image":
-            content = self.whatsapp_bot.get_binary_file(data, content_type)
-            caption = self.whatsapp_bot.get_caption()
+        if content_type == "image":
+            content = self.whatsapp_bot.get_binary_file(data)
+            caption = self.whatsapp_bot.get_caption(data)
             return self.telegram_bot.send_photo(self.__TG_CHAT_ID, content, caption, postscipt, reply_id=message_id)
 
-        elif content_type == "location":
-            location = self.whatsapp_bot.get_data(data, content_type)
-            if(location):
-                latitude, longitude = self.whatsapp_bot.get_geodata(location)
-                name, address = self.whatsapp_bot.get_place(location)
+        if content_type == "location":
+            if(data):
+                latitude, longitude = self.whatsapp_bot.get_geodata(data)
+                name, address = self.whatsapp_bot.get_place(data)
                 return self.telegram_bot.send_location(self.__TG_CHAT_ID, latitude, longitude, name, address, postscipt, reply_id=message_id)
 
         elif content_type == "contacts":
-            contact = self.whatsapp_bot.get_data(data, content_type)[0]
+            contact = data[0]
             if(contact.get('phones')):
                 return self.telegram_bot.send_message(self.__TG_CHAT_ID, "Contact: " + contact['name']['first_name'] + " +" + contact['phones'][0]['wa_id'], postscipt, reply_id=message_id)
 
-        raise Error(self.telegram_bot.error_notifications['content'])
+        raise WTCombotError(self.telegram_bot.error_notifications['content'])
 
-    @tg_check_errors
+    # @tg_check_errors
     def __telegram_to_whatsapp_sender__(self, message, number, content_type):
 
         # __telegram_to_whatsapp_sender__ пересылает сообщение из телеграма в ватсап
@@ -189,7 +232,7 @@ class TGWACOM():
             media_id = self.__wa_upload_media__(file_id)
             return self.whatsapp_bot.send_image(media_id, number, message.get('caption'))
 
-        elif content_type in ['audio', 'voice']: # не работает для голосовых сообщений
+        elif content_type in ['audio', 'voice']: # работает
             file_id = self.telegram_bot.get_file_id(message, content_type)
 
             type = None
@@ -208,10 +251,10 @@ class TGWACOM():
         elif content_type == 'location': # работает
             location_latitude, location_longitude = self.telegram_bot.get_geodata(message)
             location_info = message.get('venue')
-            title, address = self.telegram_bot.get_place(location_info) if location_info else None, None
-            return self.whatsapp_bot.send_location(location_latitude, location_longitude, title, address, number)
+            title, address = self.telegram_bot.get_place(location_info) if location_info else ('', '')
+            return self.whatsapp_bot.send_location(str(location_latitude), str(location_longitude), title, address, number)
 
-        raise Error(self.whatsapp_bot.error_notifications['content'])
+        raise WTCombotError(self.whatsapp_bot.error_notifications['content'])
 
     def __tg_check_reply_message_to_bot__(self, message) -> str:
 
@@ -230,12 +273,14 @@ class TGWACOM():
             return ''
         if(chat_id != self.__TG_CHAT_ID):
             return ''
-        if(not reply_message_text or reply_message_text in self.whatsapp_bot.error_notifications.values()):
+        if(reply_message_text in self.whatsapp_bot.error_notifications.values()):
             return ''
+        if(not reply_message_text):
+            raise WTCombotError(self.whatsapp_bot.error_notifications['number'])
 
         return reply_message_text
 
-    def __wa_upload_media__(self, file_id, content_type=None):
+    def __wa_upload_media__(self, file_id, content_type=None) -> str:
 
         # __wa_upload_media__ скачивает файл по url из телеграма и загружает в ватсап
        
@@ -243,16 +288,16 @@ class TGWACOM():
         # file_url = self.telegram_bot.get_file_url(file_id)
         downloaded_file = self.telegram_bot.download_file(file_info.file_path)
         media_id = self.whatsapp_bot.upload_media(downloaded_file, file_info.file_path, content_type)
-
+        log_info(f"media_id:{media_id}, type media_id: {type(media_id['id'])}, {type(media_id)}")
         return media_id['id'] if media_id else media_id
 
-    def __tg_send_error__(self, chat_id, message_id, message_text):
+    def __tg_send_error__(self, message_id, message_text):
 
         # __tg_send_error__ телеграм-бот печатает ошибку в групповой чат
 
-        return self.telegram_bot.send_message(chat_id, message=message_text, postscipt="", reply_id = message_id)
+        return self.telegram_bot.send_message(self.__TG_CHAT_ID, message=message_text, postscript="", reply_id = message_id)
 
-    def __wa_send_error__(self, number, message_text):
+    def __wa_send_error__(self, message_text, number):
 
         # __wa_send_error__ ватсап-бот печатает ошибку в чат с пользователем
 
@@ -263,23 +308,22 @@ class TGWACOM():
         # __modify_rus_number__ добавляет к российскому номеру код "78"
 
         match = fullmatch("^7\d{10}", number) # например 79997865656
-        logging.info(number)
         if(match):                            # если номер российский
             return "78"+number[1:]
         return number
 
     def get_wa_verify_token(self) -> str:
-
         return self.__WA_VERIFY_TOKEN
 
     def get_tg_chat_id(self) -> int:
         return self.__TG_CHAT_ID
-    #
-    # def get_wa_access_token(self) -> str:
-    #     return self.__WA_ACCESS_TOKEN
-    #
-    # def get_wa_number_id(self) -> str:
-    #     return self.__WA_NUMBER_ID
-    #
-    # def get_tg_api_token(self) -> str:
-    #     return self.__TG_API_TOKEN
+
+    def consumeData(self, consumer, wt_point, args) -> None:
+        meta = args[0]
+        tp = args[1]
+    
+        for msg in consumer:
+            data = msg.value
+            wt_point(data)
+            options = {tp: OffsetAndMetadata(msg.offset+1, meta)}
+            consumer.commit(options)

@@ -1,6 +1,6 @@
-import logging
+from logging import info as log_info
 
-from wterror import Error
+from wterror import WTCombotError
 from telebot import TeleBot
 from telebot import types
 
@@ -42,47 +42,50 @@ class TelegramBot(TeleBot):
         file_id = message[content_type]['file_id']
         return file_id
 
-    def get_photo_id(self, message):
+    def get_photo_id(self, message) -> str:
         photo_id = message['photo'][-1]['file_id']
         return photo_id
 
     def get_filename(self, message, content_type) -> str:
         return message[content_type]['file_name'].rsplit(".",1)[0]
 
-    def get_geodata(self, message) -> tuple:
+    def get_geodata(self, message) -> tuple[float, float]:
+        log_info(f'class TelegramBot, method: get_geodata : {type(message["location"]["latitude"])}, {type(message["location"]["longitude"])}')
         return message['location']['latitude'], message['location']['longitude']
 
-    def get_place(self, location) -> tuple:
-        return location['title'], location['address']
+    def get_place(self, location) -> tuple[str, str]:
+        log_info(f'class TelegramBot, method: get_place : {type(location["title"])}, {type(location["address"])}')
+        return location.get('title', ''), location.get('address', '')
 
     def send_message(self, chat_id, message, postscript, mode='HTML', reply_id=None) -> types.Message:
-        send_message_args = {'chat_id':chat_id, 'parse_mode':mode,'disable_web_page_preview':True, 'reply_id':reply_id}
+        send_message_args = {'chat_id':chat_id, 'parse_mode':mode,'disable_web_page_preview':True, 'reply_to_message_id':reply_id}
         return self.send_multiply_message(super().send_message, message, postscript, is_text=True, **send_message_args)
 
     def send_document(self, chat_id, document, document_file_name, postscript, mode='HTML', reply_id=None) -> types.Message:
         return super().send_document(chat_id, document=document, caption=postscript, visible_file_name=document_file_name,  
-                                     parse_mode=mode, reply_to_message_id=reply_id)
+                                     parse_mode=mode, reply_to_message_id=reply_id, allow_sending_without_reply=True)
 
     def send_photo(self, chat_id, photo, message, postscript, mode='HTML', reply_id=None) -> types.Message:
-        send_photo_args = {'chat_id':chat_id, 'photo':photo, 'parse_mode':mode, 'reply_id':reply_id}
+        send_photo_args = {'chat_id':chat_id, 'photo':photo, 'parse_mode':mode, 'reply_to_message_id':reply_id}
         return self.send_multiply_message(super().send_photo, message, postscript, is_text=False, **send_photo_args)
 
     def send_audio(self, chat_id, audio, postscript, mode='HTML', reply_id=None) -> types.Message:
-        return super().send_audio(chat_id, audio=audio, caption=postscript, parse_mode=mode, reply_to_message_id = reply_id)
+        return super().send_audio(chat_id, audio=audio, caption=postscript, parse_mode=mode, reply_to_message_id = reply_id, 
+                                  allow_sending_without_reply=True)
 
     def send_video(self, chat_id, video, message, postscript, mode='HTML', reply_id=None) -> types.Message:
-        send_video_args = {'chat_id':chat_id, 'video':video, 'parse_mode':mode, 'reply_id':reply_id}
+        send_video_args = {'chat_id':chat_id, 'video':video, 'parse_mode':mode, 'reply_to_message_id':reply_id}
         return self.send_multiply_message(super().send_video, message, postscript, is_text=False, **send_video_args)
 
     def send_location(self, chat_id, latitude, longitude, title, address, postscript, mode='HTML', reply_id=None) -> types.Message:
         location_message = super().send_venue(chat_id, latitude=latitude, longitude=longitude, title=title, address=address, 
-                                              reply_to_message_id=reply_id)
+                                              reply_to_message_id=reply_id, allow_sending_without_reply=True)
         if(reply_id):
             return location_message
         if(location_message):
             return super().send_message(chat_id, text=postscript, parse_mode=mode, disable_web_page_preview=True, 
-                                        reply_to_message_id=location_message.message_id)
-        raise Error(self.error_notifications['content'])
+                                        reply_to_message_id=location_message.message_id, allow_sending_without_reply=True)
+        raise WTCombotError(self.error_notifications['content'])
 
     def send_multiply_message(self, sending_func, message, postscript, is_text, **kwargs) -> types.Message:
         if(is_text):
@@ -93,13 +96,16 @@ class TelegramBot(TeleBot):
             message_length = MAX_CAPTION_LENGTH
 
         text_list = self.smart_split(message, postscript, message_length)
-        kwargs[type_text] = text_list[0]
+        if(len(text_list)>0):
+            kwargs[type_text] = text_list[0]
+        kwargs['allow_sending_without_reply'] = True
         sent_message = sending_func(**kwargs)
 
         text_list = text_list[1:] if len(text_list) > 1 else []
         for text in text_list:
             sent_message = super().send_message(chat_id=kwargs['chat_id'], text=text, parse_mode=kwargs['parse_mode'], 
-                                                disable_web_page_preview=True, reply_to_message_id=kwargs['reply_id'])
+                                                disable_web_page_preview=True, reply_to_message_id=sent_message.message_id, 
+                                                allow_sending_without_reply=True)
         return sent_message
 
     def smart_split(self, text: str, postscript: str='', chars_per_string: int=MAX_MESSAGE_LENGTH) -> list[str]:
@@ -121,8 +127,8 @@ class TelegramBot(TeleBot):
         parts = []
         while chars_per_string > 0:
             if len(text) < chars_per_string:
-                if(len(text)>0):
-                    parts.append(text + postscript)
+                # if(len(text)>0):
+                parts.append(text + postscript)
                 return parts
 
             part = text[:chars_per_string]
@@ -137,5 +143,3 @@ class TelegramBot(TeleBot):
             text = text[len(part):]
             
         return parts
-
-    

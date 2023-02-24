@@ -73,13 +73,14 @@ class TGWACOM():
             
             try:
                 prep_data = self.whatsapp_bot.preprocess(json_data)
-
                 phone_number = self.whatsapp_bot.get_mobile(prep_data)
+
                 if not phone_number:
+                    self.__tg_send_error_status_wa_message__(prep_data)
                     return
                 
-                modified_phone_number = self.__modify_rus_number__(phone_number)
                 old_message_id = self.get_reply_to_message_id(phone_number) #
+                modified_phone_number = self.__modify_rus_number__(phone_number)
 
                 content_type = self.whatsapp_bot.get_message_type(prep_data) #
 
@@ -130,7 +131,7 @@ class TGWACOM():
                 self.__tg_send_error__(message_id, error_from_whatsapp.get_message())
 
             except Exception as err:
-                log_error(f"method: tg_check_errors :{err}")
+                log_error(f"Exception from tg_point :{err}")
                 log_exception("message")
                 self.__tg_send_error__(message_id, self.whatsapp_bot.error_notifications['sending'])
 
@@ -288,8 +289,19 @@ class TGWACOM():
         # file_url = self.telegram_bot.get_file_url(file_id)
         downloaded_file = self.telegram_bot.download_file(file_info.file_path)
         media_id = self.whatsapp_bot.upload_media(downloaded_file, file_info.file_path, content_type)
-        log_info(f"media_id:{media_id}, type media_id: {type(media_id['id'])}, {type(media_id)}")
         return media_id['id'] if media_id else media_id
+    
+    def __tg_send_error_status_wa_message__(self, prep_data) -> None:
+        try:
+            status = self.whatsapp_bot.get_status(prep_data)
+            phone_number = self.whatsapp_bot.get_recipient_id(status)
+            message_id = self.get_reply_to_message_id(phone_number)
+            error = self.whatsapp_bot.get_errors(status)
+            if(error):
+                self.__tg_send_error__(message_id, self.whatsapp_bot.error_notifications['sending'])
+        except Exception as err:
+            log_error(f"Exception from __tg_send_error_status_wa_message__ : {err}")
+            log_exception("message")
 
     def __tg_send_error__(self, message_id, message_text):
 

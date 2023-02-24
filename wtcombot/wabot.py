@@ -37,7 +37,20 @@ class WhatsAppBot(WhatsApp):
             return prep_data["contacts"][0]["wa_id"]
         except Exception:
             return ''
+        
+    def get_status(self, prep_data) -> str:
+        if('statuses' in prep_data):
+            return prep_data['statuses'][0]
+        return ''
 
+    def get_errors(self, status) -> str:
+        if('errors' in status):
+            return status['errors'][0]['title']
+        return ''
+
+    def get_recipient_id(self, status) -> str|None:
+        return status.get('recipient_id')
+       
     def get_message_type(self, prep_data) -> str:
         return prep_data["messages"][0]["type"]
 

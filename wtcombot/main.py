@@ -1,4 +1,4 @@
-from sys import argv
+from sys import argv, exit
 from json import dumps, loads
 import signal
 from logging import info as log_info, error as log_error, exception as log_exception  
@@ -11,8 +11,18 @@ from kafka.errors import KafkaTimeoutError, KafkaError
 
 from wtcombot import TGWACOM
 
+try:
+    producer = KafkaProducer(value_serializer=lambda v: dumps(v).encode('utf-8'), api_version=(0,10,2), bootstrap_servers=['localhost:9092'])
+except KafkaTimeoutError as kte:
+    log_error(f'KafkaLogsProducer timeout sending log to Kafka: {kte}')
+    log_exception(f'message')
+except KafkaError as ke:
+    log_error(f'KafkaLogsProducer error sending log to Kafka: {ke}')  
+    log_exception(f'message')  
+except Exception as e:
+    log_error(f'KafkaLogsProducer Error: {e}')
+    log_exception("message")
 
-producer = KafkaProducer(value_serializer=lambda v: dumps(v).encode('utf-8'), api_version=(0,10,2), bootstrap_servers=['localhost:9092'])
 filename = argv[1] if len(argv) == 2 else '../WT_COMBOT_ENVFILE.env'
 log_info(f"file env: {filename}")
 tgwacombot = TGWACOM(filename)

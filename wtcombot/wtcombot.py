@@ -90,11 +90,11 @@ class TGWACOM():
                 try:
                     data = self.whatsapp_bot.get_data(prep_data, content_type)
                     sent_message = self.__whatsapp_to_telegram_sender__(data, postscipt, content_type, old_message_id)
-                    log_info(f"sending_status from telegram: {sent_message}")
+                    log_info(f"Sending_status from telegram: {sent_message}")
                     new_message_id = sent_message.message_id
 
                 except KeyError as ke:
-                    log_error(f"KeyError in whatsapp {ke}")
+                    log_error(f"KeyError from whatsapp: {ke}")
                     log_exception("message")
                     self.__wa_send_error__(self.telegram_bot.error_notifications['content'], modified_phone_number)
                 
@@ -111,7 +111,7 @@ class TGWACOM():
 
         # tg_point вызывается из app request (tg_webhook)
 
-        log_info("Received telegram webhook data: %s", data)
+        log_info(f"Received telegram webhook data: {data}")
         message = data.get('message')
 
         if message:
@@ -141,7 +141,7 @@ class TGWACOM():
             self.cursor = self.conn.cursor()
             return True
         except Exception as err:
-            log_error("Exception from open_connection: %s", err)
+            log_error(f"Exception from open_connection: {err}")
             log_exception("message")
         return False
 
@@ -152,7 +152,8 @@ class TGWACOM():
             if(hasattr(self, 'cursor')):
                 self.cursor.close()
         except Exception as err:
-            log_error("Exception from close_connection: %s", err)
+            log_error(f"Exception from close_connection: {err}")
+            log_exception("message")
 
     def get_reply_to_message_id(self, phone_number) -> int|None:
         try:
@@ -160,7 +161,8 @@ class TGWACOM():
             response = self.cursor.fetchone()
             return response[0] if response else None
         except Exception as err:
-            log_error("Exception from get_reply_to_message_id: %s", err)
+            log_error(f"Exception from get_reply_to_message_id: {err}")
+            log_exception("message")
         return None
 
     def set_reply_to_message_id(self, phone_number, old_message_id, new_message_id) -> None:
@@ -171,13 +173,14 @@ class TGWACOM():
                 self.cursor.execute(f'INSERT INTO tg_user_messages VALUES ({phone_number}, {new_message_id});')
             self.conn.commit()
         except Exception as err:
-            log_error("Exception from set_reply_to_message_id: %s", err)
+            log_error(f"Exception from set_reply_to_message_id: {err}")
+            log_exception("message")
 
 
     def __whatsapp_to_telegram_sender__(self, data, postscipt, content_type, message_id): 
 
         # __whatsapp_to_telegram_sender__ пересылает сообщение из ватсапа в телеграм
-        log_info(f'MESSAGE for telegram: {data}')
+    
         if content_type == "text":
             message = self.whatsapp_bot.get_message(data)
             return self.telegram_bot.send_message(self.__TG_CHAT_ID, message, postscipt, reply_id=message_id)
@@ -298,7 +301,11 @@ class TGWACOM():
             message_id = self.get_reply_to_message_id(phone_number)
             error = self.whatsapp_bot.get_errors(status)
             if(error):
-                self.__tg_send_error__(message_id, self.whatsapp_bot.error_notifications['sending'])
+                error_code = error.get('code')
+                if(error_code == 131047):
+                    self.__tg_send_error__(message_id, self.whatsapp_bot.error_notifications[error_code])
+                else:
+                    self.__tg_send_error__(message_id, self.whatsapp_bot.error_notifications['sending'])
         except Exception as err:
             log_error(f"Exception from __tg_send_error_status_wa_message__ : {err}")
             log_exception("message")

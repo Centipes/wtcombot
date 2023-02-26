@@ -1,4 +1,4 @@
-from sys import argv, exit
+from sys import argv
 from json import dumps, loads
 import signal
 from logging import info as log_info, error as log_error, exception as log_exception  
@@ -11,20 +11,10 @@ from kafka.errors import KafkaTimeoutError, KafkaError
 
 from wtcombot import TGWACOM
 
-try:
-    producer = KafkaProducer(value_serializer=lambda v: dumps(v).encode('utf-8'), api_version=(0,10,2), bootstrap_servers=['localhost:9092'])
-except KafkaTimeoutError as kte:
-    log_error(f'KafkaLogsProducer timeout sending log to Kafka: {kte}')
-    log_exception(f'message')
-except KafkaError as ke:
-    log_error(f'KafkaLogsProducer error sending log to Kafka: {ke}')  
-    log_exception(f'message')  
-except Exception as e:
-    log_error(f'KafkaLogsProducer Error: {e}')
-    log_exception("message")
+producer = KafkaProducer(value_serializer=lambda v: dumps(v).encode('utf-8'), api_version=(0,10,2), bootstrap_servers=['localhost:9092'])
 
 filename = argv[1] if len(argv) == 2 else '../WT_COMBOT_ENVFILE.env'
-log_info(f"file env: {filename}")
+log_info(f"File env: {filename}")
 tgwacombot = TGWACOM(filename)
 
 app = Flask(__name__)
@@ -61,10 +51,10 @@ class BackgroundThread(Thread):
                 self.handle()
         except KafkaError as ke:
             log_error(f'KafkaLogsConsumer error sending log to Kafka: {ke}')  
-            log_exception(f'message')  
+            log_exception('message')  
         except Exception as e:
             log_error(f'Error in {self.topic}. KafkaLogsProducer exception sending log to Kafka: {e}')
-            log_exception(f'message')
+            log_exception('message')
         finally:
             self.consumer.close()
             log_info(f"consumer with topic '{self.topic}' closed")
@@ -75,13 +65,13 @@ def producer_launch(request, topic) -> None:
         producer.send(topic, data)
     except KafkaTimeoutError as kte:
         log_error(f'KafkaLogsConsumer timeout sending log to Kafka: {kte}')
-        log_exception(f'message')
+        log_exception('message')
     except KafkaError as ke:
         log_error(f'KafkaLogsConsumer error sending log to Kafka: {ke}')  
-        log_exception(f'message')  
+        log_exception('message')  
     except Exception as e:
         log_error(f'WhatsApp Error: {e}')
-        log_exception("message")
+        log_exception('message')
 
 def launch_consumers() -> None:
     whatsapp_consumer_thread = BackgroundThread(target=tgwacombot.wa_point, args=('whatsapp',))
@@ -94,14 +84,14 @@ def launch_consumers() -> None:
     def sigint_handler(signum, frame):
         whatsapp_consumer_thread.stop()
         telegram_consumer_thread.stop()
-        print("Threads stop")
+        log_info("Threads stop")
 
         if whatsapp_consumer_thread.is_alive():
             whatsapp_consumer_thread.join()
-            print("Thread stop")
+            log_info("Thread stop")
         if telegram_consumer_thread.is_alive():
             telegram_consumer_thread.join()
-            print("Thread stop")
+            log_info("Thread stop")
 
         original_handler(signum, frame)
 
@@ -127,10 +117,9 @@ def wa_webhook():
 def tg_webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
-        log_info(f"json telegram: {json_string}")
         update = tb_types.Update.de_json(json_string)
         tgwacombot.telegram_bot.process_new_updates([update])
-        producer_launch(request, "telegram")
+        producer_launch(request, 'telegram')
     else:
         abort(403)
     return ''
@@ -142,4 +131,4 @@ if __name__ == "__main__":
         launch_consumers()
         app.run(port=5000, debug=True, use_reloader=False)
     else:
-        log_error(f"Not all environment variables are declared correctly in the file {filename}")
+        log_error(f"Not all environment variables are declared correctly in the file: {filename}")

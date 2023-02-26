@@ -1,5 +1,3 @@
-from logging import info as log_info
-
 from wterror import WTCombotError
 from telebot import TeleBot
 from telebot import types
@@ -50,11 +48,9 @@ class TelegramBot(TeleBot):
         return message[content_type]['file_name'].rsplit(".",1)[0]
 
     def get_geodata(self, message) -> tuple[float, float]:
-        log_info(f'class TelegramBot, method: get_geodata : {type(message["location"]["latitude"])}, {type(message["location"]["longitude"])}')
         return message['location']['latitude'], message['location']['longitude']
 
     def get_place(self, location) -> tuple[str, str]:
-        log_info(f'class TelegramBot, method: get_place : {type(location["title"])}, {type(location["address"])}')
         return location.get('title', ''), location.get('address', '')
 
     def send_message(self, chat_id, message, postscript, mode='HTML', reply_id=None) -> types.Message:

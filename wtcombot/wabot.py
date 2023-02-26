@@ -17,7 +17,8 @@ class WhatsAppBot(WhatsApp):
         self.error_notifications = {"uploading": "Error uploading media", 
                                     "sending":"Error sending message", 
                                     "content": "Content error", 
-                                    "number": "Please, reply to the message that contains the phone number"}
+                                    "number": "Please, reply to the message that contains the phone number",
+                                     131047 : "Message failed to send because more than 24 hours have passed since the customer last replied to this number."}
         self.file = None
         
     def generate_user_info(self, number, username) -> str:
@@ -45,7 +46,7 @@ class WhatsAppBot(WhatsApp):
 
     def get_errors(self, status) -> str:
         if('errors' in status):
-            return status['errors'][0]['title']
+            return status['errors'][0]
         return ''
 
     def get_recipient_id(self, status) -> str|None:
@@ -117,7 +118,6 @@ class WhatsAppBot(WhatsApp):
     def upload_media(self, content, media, content_type = None) -> dict:
 
         type_media = guess_type(media)[0] if content_type is None else content_type
-        log_info(f"type:{type_media}")
 
         form_data = {
             "file": (
@@ -131,9 +131,9 @@ class WhatsAppBot(WhatsApp):
         form_data = MultipartEncoder(fields=form_data)
         headers = self.headers.copy()
         headers["Content-Type"] = form_data.content_type
-        log_info(f"headers {headers}")
+        log_info(f"headers: {headers}")
         log_info(f"Content-Type: {form_data.content_type}")
-        log_info(f"Uploading media {media}")
+        log_info(f"Uploading media: {media}")
       
         r = requests.post(
             f"{self.base_url}/{self.phone_number_id}/media",
@@ -143,12 +143,10 @@ class WhatsAppBot(WhatsApp):
 
         if r.status_code == 200:
             log_info(f"Media {media} uploaded")
-            log_info(f"class: WhatsAppBot, method: upload_media: {type(r.json)}")
             return r.json()
         log_info(f"Error uploading media {media}")
         log_info(f"Status code: {r.status_code}")
         log_info(f"Response: {r.json()}")
-        log_info(f"Type of response: {type(r.json)}")
         raise WTCombotError(self.error_notifications["uploading"])
 
     def __check_message__(self, response, second_message, number) -> dict:
@@ -157,7 +155,7 @@ class WhatsAppBot(WhatsApp):
         # В случае успеха возвращает response
 
         if(response.get("error")):
-            log_error(f"Error response: {response}")
+            log_error(f"Error whatsapp response: {response}")
             if(second_message):
                 raise WTCombotError(self.error_notifications["uploading"])
             raise WTCombotError(self.error_notifications["sending"])
